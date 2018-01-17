@@ -1,0 +1,4 @@
+'-DWIFI_SSID="your-wifi-ssid-here"'
+'-DWIFI_PASSWORD="your-wifi-password-here"'
+'-DQTH_SERVER="your-qth-server-here"'
+'-DMQTT_MAX_PACKET_SIZE=1024'
