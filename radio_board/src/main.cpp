@@ -176,13 +176,18 @@ void on_tx_code_set(const char *topic, const char *value) {
 	// XXX: Ideally this would use a full JSON parsing pass to determine if the
 	// value is 'truthy'...
 	bool state;
-	if (strcmp(value, "true") == 0) {
-		state = true;
-	} else if (strcmp(value, "false") == 0) {
+	
+	// Skip whitespace in JSON
+	while (value[0] == ' ' || value[0] == '\t') {
+		value++;
+	}
+	
+	if ((value[0] == '0' && atof(value) == 0)
+	    || value[0] == 'f'
+	    || value[0] == 'n') {
 		state = false;
 	} else {
-		// Invalid value, ignore!
-		return;
+		state = true;
 	}
 	
 	// Send the code
@@ -314,43 +319,6 @@ void on_tx_codes_changed(const char *topic, const char *value) {
 	
 	delete tokens;
 }
-
-
-
-//void test_tx(const char *topic, const char *json) {
-//	jsmn_parser parser;
-//	jsmn_init(&parser);
-//	jsmntok_t tokens[3];  // Long enough for an array with two ints
-//	int num_tokens = jsmn_parse(&parser, json, strlen(json), tokens, 3);
-//	
-//	if (num_tokens != 3 ||
-//	    tokens[0].type != JSMN_ARRAY ||
-//	    tokens[0].size != 2 ||
-//	    tokens[1].type != JSMN_PRIMITIVE ||
-//	    tokens[1].type == 't' ||     // numbers.
-//	    tokens[1].type == 'f' ||
-//	    tokens[1].type == 'n' ||
-//	    tokens[2].type != JSMN_PRIMITIVE ||
-//	    tokens[2].type == 't' ||     // numbers.
-//	    tokens[2].type == 'f' ||
-//	    tokens[2].type == 'n') {
-//		Serial.print("Invalid JSON: ");
-//		Serial.println(json);
-//		return;
-//	}
-//	
-//	unsigned long code = (unsigned long)strtoul(json + tokens[1].start, NULL, 10);
-//	unsigned int code_length = (unsigned int)strtoul(json + tokens[2].start, NULL, 10);
-//	if (FourThreeThree_tx(code, code_length)) {
-//		Serial.print("Sending code ");
-//		Serial.print(code);
-//		Serial.print(" (length ");
-//		Serial.print(code_length);
-//		Serial.println(")");
-//	} else {
-//		Serial.println("Couldn't transmit code: already busy transmitting!");
-//	}
-//}
 
 
 void setup() {
