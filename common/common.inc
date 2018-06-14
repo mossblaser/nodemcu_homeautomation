@@ -1,5 +1,6 @@
 #include <ESP8266WiFi.h>
 #include <Qth.h>
+#include <EEPROM.h>
 
 #ifndef WIFI_SSID
 	#error "Macro WIFI_SSID must be defined (string)."
