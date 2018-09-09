@@ -324,7 +324,12 @@ void on_tx_codes_changed(const char *topic, const char *value) {
 void setup() {
 	setup_common();
 	
-	FourThreeThree_rx_begin(rx_pin);
+	FourThreeThree_rx_begin(rx_pin,
+	                        /*zero_min_us =*/ 200ul,
+	                        /*zero_max_us =*/ 500ul,
+	                        /*one_min_us =*/ 550ul,
+	                        /*one_max_us =*/ 1100ul,
+	                        /*symbol_max_us =*/ 1500ul);
 	FourThreeThree_tx_begin(tx_pin);
 	
 	rx_codes_prop = new Qth::EEPROMProperty(
