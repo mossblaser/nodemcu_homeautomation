@@ -182,9 +182,13 @@ void on_tx_code_set(const char *topic, const char *value) {
 		value++;
 	}
 	
+	if (value[0] == 'n') {
+		// Do nothing if null.
+		return;
+	}
+	
 	if ((value[0] == '0' && atof(value) == 0)
-	    || value[0] == 'f'
-	    || value[0] == 'n') {
+	    || value[0] == 'f') {
 		state = false;
 	} else {
 		state = true;
@@ -193,8 +197,8 @@ void on_tx_code_set(const char *topic, const char *value) {
 	// Send the code
 	for (size_t i = 0; i < num_tx_codes; i++) {
 		if (strcmp(tx_codes[i].qth_path, topic) == 0) {
-			tx_codes[0].waiting = true;
-			tx_codes[0].state = state;
+			tx_codes[i].waiting = true;
+			tx_codes[i].state = state;
 		}
 	}
 }
@@ -204,7 +208,6 @@ void on_tx_codes_changed(const char *topic, const char *value) {
 	for (size_t i = 0; i < num_tx_codes; i++) {
 		qth.unregisterProperty(tx_codes[i].property);
 		qth.unwatchProperty(tx_codes[i].property);
-		qth.setProperty(tx_codes[i].property, ""); // Delete the property
 		delete tx_codes[i].property;
 		delete [] tx_codes[i].qth_path;
 	}
@@ -298,10 +301,10 @@ void on_tx_codes_changed(const char *topic, const char *value) {
 		tx_code->property = new Qth::Property(tx_code->qth_path,
 		                                      on_tx_code_set,
 		                                      "433 MHz code TX.",
-		                                      false);
+		                                      false,
+		                                      NULL);
 		qth.registerProperty(tx_code->property);
 		qth.watchProperty(tx_code->property);
-		qth.setProperty(tx_code->property, "null");
 		
 		// Get code
 		const char *on_code_str = value + tokens[i+2].start;
@@ -338,7 +341,7 @@ void setup() {
 		0,  // EPROM Start addr
 		"Codes to listen for. {\\\"qth_path\\\": [code, length], ...}.",
 		false,
-		"",
+		NULL,
 		on_rx_codes_changed);
 	
 	tx_codes_prop = new Qth::EEPROMProperty(
@@ -347,7 +350,7 @@ void setup() {
 		MQTT_MAX_PACKET_SIZE,  // EPROM Start addr
 		"On/off codes to make properties for. {\\\"qth_path\\\": [on_code, off_code, length], ...}.",
 		false,
-		"",
+		NULL,
 		on_tx_codes_changed);
 	
 	qth.registerProperty(rx_codes_prop);
