@@ -67,4 +67,11 @@ void setup_common() {
 
 void loop_common() {
 	qth.loop();
+	
+	static bool last_connected = false;
+	if (qth.connected() != last_connected) {
+		Serial.print("Qth connection: ");
+		last_connected = qth.connected();
+		Serial.println(last_connected);
+	}
 }
