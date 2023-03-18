@@ -6,6 +6,8 @@
 
 // The control pin for the servo will be attached to this pin
 #define SERVO_PIN D4
+#define SERVO_MIN_PULSE_US 450
+#define SERVO_MAX_PULSE_US 2450
 
 // The pin for the LDR
 #define LDR_PIN A0
@@ -21,7 +23,7 @@
 #define LDR_SAMPLE_PERIOD 100
 
 // Servo angles while the button is being pressed and released
-#define SERVO_PRESSED_ANGLE 40
+#define SERVO_PRESSED_ANGLE 70
 #define SERVO_RELEASED_ANGLE 0
 #define SERVO_PRESS_DURATION 500
 
@@ -31,6 +33,9 @@
 // Allow n changes in this many ms
 #define N_CHANGES 10
 #define N_CHANGE_RATE_LIMIT (10 * 60 * 60 * 1000)
+
+// Allow re-trying pressing the button this many times
+#define N_RETRIES 5
 
 #define QTH_PREFIX "heating/hot_water"
 
@@ -168,6 +173,7 @@ class ServoControl {
 			, down_position(down_position)
 			, press_duration(press_duration)
 			, state(State::idle)
+			, servo()
 		{
 		}
 		
@@ -231,21 +237,28 @@ class ServoControl {
 		Servo servo;
 		
 		void enter_press_state() {
-			servo.attach(pin);
+			servo.attach(pin, SERVO_MIN_PULSE_US, SERVO_MAX_PULSE_US);
 			servo.write(down_position);
+			delay(SERVO_PRESS_DURATION); // XXX
+			Serial.print("Moving servo to ");
+			Serial.println(down_position);
 			state = State::press;
 			timeout.reset(press_duration);
 		}
 		
 		void enter_release_state() {
 			servo.write(up_position);
+			delay(SERVO_PRESS_DURATION); // XXX
+			Serial.print("Moving servo to ");
+			Serial.println(up_position);
 			state = State::release;
 			timeout.reset(press_duration);
 		}
 		
 		void enter_idle_state() {
 			servo.detach();
-			digitalWrite(pin, LOW);
+			delay(100); // XXX
+			//digitalWrite(pin, LOW);
 			state = State::idle;
 		}
 };
@@ -261,6 +274,7 @@ class HotWaterController {
 		                   int up_position, int down_position, long press_duration,
 		                   int ldr_low_threshold, int ldr_high_threshold, int ldr_inverted, long ldr_sample_period,
 		                   long rate_limit, int n_changes, long n_change_rate_limit,
+		                   long n_retries,
 		                   state_change_callback_t state_changed_callback,
 		                   fault_callback_t fault_callback)
 			: servo(servo_pin, up_position, down_position, press_duration)
@@ -268,6 +282,7 @@ class HotWaterController {
 			, rate_limit(rate_limit)
 			, n_changes(n_changes)
 			, n_change_rate_limit(n_change_rate_limit)
+			, n_retries(n_retries)
 			, state_changed_callback(state_changed_callback)
 			, fault_callback(fault_callback)
 			, state(State::idle)
@@ -296,6 +311,7 @@ class HotWaterController {
 			
 			// Report LDR changes
 			bool new_ldr_state = ldr.get_state();
+			digitalWrite(LED_BUILTIN, !new_ldr_state);
 			if (new_ldr_state != last_ldr_state) {
 				last_ldr_state = new_ldr_state;
 				state_changed_callback(new_ldr_state);
@@ -315,6 +331,7 @@ class HotWaterController {
 								state = next_state ? State::pressing_on : State::pressing_off;
 								servo.actuate();
 								rate_limit_timeout.reset(rate_limit);
+								n_retries_remaining = n_retries;
 							}
 						 }
 						 set_state_called = false;
@@ -326,9 +343,15 @@ class HotWaterController {
 					if (servo.idle()) {
 						// Press complete!
 						if ((state == State::pressing_on) != ldr.get_state()) {
-							// LDR didn't change as expected, fault condition!
-							state = State::fault_button_press_failed;
-							fault_callback("FATAL: Button press failed to change boiler state.");
+							// LDR didn't change as expected, fault condition after
+							// n_retries!
+							if (n_retries_remaining) {
+								n_retries_remaining--;
+								servo.actuate();
+							} else {
+								state = State::fault_button_press_failed;
+								fault_callback("FATAL: Button press failed to change boiler state.");
+							}
 						} else {
 							state = State::waiting;
 						}
@@ -371,6 +394,10 @@ class HotWaterController {
 		// The number of changes allowed within n_change_rate_limit milliseconds
 		const int n_changes;
 		const int n_change_rate_limit;
+		
+		// Number of times to re-try pressing the button before giving up
+		const int n_retries;
+		int n_retries_remaining;
 		
 		state_change_callback_t state_changed_callback;
 		fault_callback_t fault_callback;
@@ -449,7 +476,6 @@ void on_hot_water_state_set(const char *topic, const char *json) {
 }
 
 void on_hot_water_state_changed(bool new_state) {
-	digitalWrite(LED_BUILTIN, !new_state);
 	qth.setProperty(hot_water_state, new_state ? "true" : "false");
 	qth.setProperty(hot_water_actual_state, new_state ? "true" : "false");
 	Serial.print("LED state changed: ");
@@ -468,7 +494,7 @@ void on_hot_water_fault(const char *message) {
 
 void on_move_servo_called(const char *topic, const char *json) {
 	Servo servo;
-	servo.attach(SERVO_PIN);
+	servo.attach(SERVO_PIN, SERVO_MIN_PULSE_US, SERVO_MAX_PULSE_US);
 	servo.write(atoi(json));
 	Serial.print("Moving servo to ");
 	Serial.println(atoi(json));
@@ -486,7 +512,7 @@ void setup() {
 	digitalWrite(SERVO_PIN, LOW);
 	{
 		Servo s;
-		s.attach(SERVO_PIN);
+		s.attach(SERVO_PIN, SERVO_MIN_PULSE_US, SERVO_MAX_PULSE_US);
 		s.write(SERVO_RELEASED_ANGLE);
 		delay(SERVO_PRESS_DURATION);
 		s.detach();
@@ -540,6 +566,7 @@ void setup() {
 		SERVO_RELEASED_ANGLE, SERVO_PRESSED_ANGLE, SERVO_PRESS_DURATION,
 		LDR_LOW_WATER, LDR_HIGH_WATER, LDR_INVERTED, LDR_SAMPLE_PERIOD,
 		RATE_LIMIT, N_CHANGES, N_CHANGE_RATE_LIMIT,
+		N_RETRIES,
 		on_hot_water_state_changed,
 		on_hot_water_fault);
 }
